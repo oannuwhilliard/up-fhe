@@ -91,6 +91,7 @@ function App() {
   const [fheInstance, setFheInstance] = useState<any>(null);
   const [isInitializingSdk, setIsInitializingSdk] = useState(false);
   const [sdkReady, setSdkReady] = useState(false);
+  const [ethereumProvider, setEthereumProvider] = useState<any>(null);
 
   const contract = useMemo(() => {
     if (!signer) return undefined;
@@ -165,6 +166,7 @@ function App() {
   useEffect(() => {
     if (!isConnected || !address || !walletClient) {
       setSigner(undefined);
+      setEthereumProvider(null);
       return;
     }
 
@@ -172,13 +174,44 @@ function App() {
       try {
         setStatus("Initializing wallet connection...");
 
-        // For injected wallets (MetaMask, OKX), use window.ethereum directly
-        // This is required for FHEVM SDK compatibility
-        const ethereumProvider = window.ethereum;
+        // Detect the correct provider based on connected wallet
+        // OKX wallet uses window.okxwallet, MetaMask uses window.ethereum
+        let ethereumProvider: any = null;
+        
+        // Check walletClient to determine which wallet is connected
+        const walletName = walletClient?.name?.toLowerCase() || '';
+        const walletId = walletClient?.id?.toLowerCase() || '';
+        const win = window as any;
+        
+        console.log("[Wallet] Detecting provider", { walletName, walletId, hasOkx: !!win.okxwallet, hasEthereum: !!win.ethereum });
+        
+        // Check for OKX wallet first (if OKX is connected or available)
+        // OKX wallet provider can be at window.okxwallet.ethereum or window.okxwallet
+        if (walletName.includes('okx') || walletId.includes('okx') || win.okxwallet) {
+          // Try window.okxwallet.ethereum first (most common)
+          if (win.okxwallet?.ethereum) {
+            ethereumProvider = win.okxwallet.ethereum;
+            console.log("[Wallet] Using OKX wallet provider (okxwallet.ethereum)");
+          } 
+          // Fallback to window.okxwallet directly
+          else if (win.okxwallet) {
+            ethereumProvider = win.okxwallet;
+            console.log("[Wallet] Using OKX wallet provider (okxwallet)");
+          }
+        }
+        
+        // Fallback to MetaMask or other injected wallets
+        if (!ethereumProvider && win.ethereum) {
+          ethereumProvider = win.ethereum;
+          console.log("[Wallet] Using window.ethereum provider");
+        }
         
         if (!ethereumProvider) {
           throw new Error("No ethereum provider found. Please install MetaMask or OKX wallet.");
         }
+
+        // Save the provider for FHEVM initialization
+        setEthereumProvider(ethereumProvider);
 
         // Create BrowserProvider and Signer
         const newProvider = new BrowserProvider(ethereumProvider as never);
@@ -252,17 +285,23 @@ function App() {
       setIsInitializingSdk(true);
       setStatus("Preparing background service...");
       await sdk.initSDK();
+      
+      // Use the detected provider (OKX or MetaMask) instead of RPC URL
+      // This ensures FHEVM uses the correct wallet provider
+      const networkProvider = ethereumProvider || window.ethereum || RELAYER_RPC_URL;
+      
       const instance = await sdk.createInstance({
         ...(sdk.SepoliaConfig || {}),
-        network: RELAYER_RPC_URL,
+        network: networkProvider,
         relayerUrl: RELAYER_URL,
       });
       setFheInstance(instance);
       setSdkReady(true);
       setStatus("Background service is ready.");
       console.info("[RelayerSDK] Initialization completed", {
-        network: RELAYER_RPC_URL,
+        network: networkProvider === RELAYER_RPC_URL ? "RPC URL" : "Provider object",
         relayerUrl: RELAYER_URL,
+        usingProvider: !!ethereumProvider,
       });
       return true;
     } catch (error) {
@@ -274,7 +313,7 @@ function App() {
     } finally {
       setIsInitializingSdk(false);
     }
-  }, [isInitializingSdk, sdkReady]);
+  }, [isInitializingSdk, sdkReady, ethereumProvider]);
 
   useEffect(() => {
     if (address) {
