@@ -17,7 +17,7 @@ const connectors = connectorsForWallets(
   ],
   {
     appName: 'Image Rating dApp',
-    // projectId is not set to disable WalletConnect
+    projectId: '', // Empty string since WalletConnect is not used
   }
 );
 

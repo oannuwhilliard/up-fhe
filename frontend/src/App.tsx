@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BrowserProvider, Contract, ethers } from "ethers";
 import type { Signer } from "ethers";
-import { useAccount, useWalletClient, usePublicClient } from "wagmi";
+import { useAccount, useWalletClient } from "wagmi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import "./App.css";
 import { IMAGE_RATING_ABI, IMAGE_RATING_ADDRESS } from "./constants/contract";
@@ -67,14 +67,12 @@ function App() {
   // Wagmi hooks
   const { address, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
-  const publicClient = usePublicClient();
 
   const [signer, setSigner] = useState<Signer>();
   const [status, setStatus] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"upload" | "gallery" | "decrypt">("upload");
   const [isPublishing, setIsPublishing] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [lastUploadedCid, setLastUploadedCid] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
   const [imageCards, setImageCards] = useState<GalleryItem[]>([]);
   const [isLoadingImages, setIsLoadingImages] = useState(false);
@@ -223,7 +221,6 @@ function App() {
       console.log("[Contract] uploadImage tx hash:", tx.hash);
       await tx.wait();
       setStatus("Image uploaded and on-chain successfully!");
-      setLastUploadedCid(cid);
       setPreviewUrl(buildGatewayUrl(cid));
       setSelectedFile(null);
       await loadImages();
