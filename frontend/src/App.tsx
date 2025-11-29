@@ -179,15 +179,14 @@ function App() {
         let ethereumProvider: any = null;
         
         // Check walletClient to determine which wallet is connected
-        const walletName = walletClient?.name?.toLowerCase() || '';
-        const walletId = walletClient?.id?.toLowerCase() || '';
+        const walletName = (walletClient as any)?.name?.toLowerCase() || '';
         const win = window as any;
         
-        console.log("[Wallet] Detecting provider", { walletName, walletId, hasOkx: !!win.okxwallet, hasEthereum: !!win.ethereum });
+        console.log("[Wallet] Detecting provider", { walletName, hasOkx: !!win.okxwallet, hasEthereum: !!win.ethereum });
         
         // Check for OKX wallet first (if OKX is connected or available)
         // OKX wallet provider can be at window.okxwallet.ethereum or window.okxwallet
-        if (walletName.includes('okx') || walletId.includes('okx') || win.okxwallet) {
+        if (walletName.includes('okx') || win.okxwallet) {
           // Try window.okxwallet.ethereum first (most common)
           if (win.okxwallet?.ethereum) {
             ethereumProvider = win.okxwallet.ethereum;
