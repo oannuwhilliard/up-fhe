@@ -5,7 +5,7 @@ import { useAccount, useWalletClient } from "wagmi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import "./App.css";
 import { IMAGE_RATING_ABI, IMAGE_RATING_ADDRESS } from "./constants/contract";
-import { ACL_ABI, ACL_ADDRESS } from "./constants/acl";
+import { ACL_ABI } from "./constants/acl";
 
 type GalleryItem = {
   id: string;
@@ -54,6 +54,7 @@ const DEFAULT_RPC = "https://sepolia.infura.io/v3/c37e15de76944bc693d9226252fe00
 const DEFAULT_RELAYER = "https://relayer.testnet.zama.ai";
 const RELAYER_RPC_URL = import.meta.env.VITE_RELAYER_RPC_URL || DEFAULT_RPC;
 const RELAYER_URL = import.meta.env.VITE_RELAYER_URL || DEFAULT_RELAYER;
+const ACL_ADDRESS = import.meta.env.VITE_ACL_ADDRESS || IMAGE_RATING_ADDRESS;
 const logDecrypt = (...args: unknown[]) => console.info("[Decrypt]", ...args);
 
 function App() {
@@ -87,8 +88,6 @@ function App() {
   >({});
   const [isDecrypting, setIsDecrypting] = useState(false);
   const [isSubmittingRating, setIsSubmittingRating] = useState(false);
-  const [ratingInProgress, setRatingInProgress] = useState<string | null>(null); // 正在评分的图片ID
-  const [decryptingImageId, setDecryptingImageId] = useState<string | null>(null); // 正在解密的图片ID
   const [fheInstance, setFheInstance] = useState<any>(null);
   const [isInitializingSdk, setIsInitializingSdk] = useState(false);
   const [sdkReady, setSdkReady] = useState(false);
@@ -376,41 +375,7 @@ function App() {
   };
 
   const handleUserDecrypt = async (imageId: string, sumHandle: string, countHandle: string) => {
-    // 防止重复点击：检查是否正在解密此图片
-    if (decryptingImageId === imageId) {
-      console.warn("[Decrypt] Already decrypting this image, please wait...");
-      return;
-    }
-
-    // 防止重复点击：检查是否有其他图片正在解密
-    if (isDecrypting) {
-      console.warn("[Decrypt] Another decryption is in progress, please wait...");
-      setStatus("另一个解密操作正在进行中，请稍候...");
-      return;
-    }
-
-    logDecrypt("========================================");
-    logDecrypt("🔐 开始解密请求");
-    logDecrypt("========================================");
     logDecrypt("Start decrypt flow", { imageId, sumHandle, countHandle });
-
-    // 先获取图片信息验证权限
-    try {
-      const imageInfo = await contract?.getImageInfo(imageId);
-      const userAddr = await signer?.getAddress();
-      logDecrypt("📋 图片信息验证:");
-      logDecrypt("  - 图片 ID:", imageId);
-      logDecrypt("  - 图片创建者:", imageInfo?.creator);
-      logDecrypt("  - 当前用户:", userAddr);
-      logDecrypt("  - 是否是创建者:", userAddr?.toLowerCase() === imageInfo?.creator.toLowerCase() ? "✅ 是" : "❌ 否");
-
-      if (userAddr?.toLowerCase() !== imageInfo?.creator.toLowerCase()) {
-        logDecrypt("⚠️ 警告：你不是图片创建者，解密可能失败！");
-      }
-    } catch (err) {
-      logDecrypt("⚠️ 无法获取图片信息进行预检查:", err);
-    }
-
     if (!contract || !signer) {
       setStatus("Please connect wallet first.");
       console.warn("[Decrypt] Wallet not connected");
@@ -437,102 +402,44 @@ function App() {
     }
     try {
       setIsDecrypting(true);
-      setDecryptingImageId(imageId); // 标记正在解密的图片
       setStatus("Preparing decryption...");
-      logDecrypt("========== 开始解密流程 ==========");
-      logDecrypt("图片 ID:", imageId);
-
       logDecrypt("Step 1: resolve user address");
       const userAddress = await signer.getAddress();
-      logDecrypt("当前用户地址:", userAddress);
-      logDecrypt("合约地址:", IMAGE_RATING_ADDRESS);
-      logDecrypt("ACL地址:", ACL_ADDRESS);
-
       const handles = [sumHandle, countHandle];
       logDecrypt("Step 2: ACL authorize handles", { handles, acl: ACL_ADDRESS });
       const acl = new ethers.Contract(ACL_ADDRESS, ACL_ABI, signer);
-
-      // 关键：检查用户对handle的权限，而不是合约对handle的权限
       for (const handle of handles) {
-        // 检查合约地址的权限
-        const contractAuthorized = await acl.persistAllowed(handle, IMAGE_RATING_ADDRESS);
-        logDecrypt("ACL persistAllowed result (合约)", { handle, contractAuthorized });
-
-        // ⚠️ 关键：检查用户地址的权限
-        const userAuthorized = await acl.persistAllowed(handle, userAddress);
-        logDecrypt("ACL persistAllowed result (用户)", { handle, userAuthorized });
-
-        // 如果合约没有权限，授予合约权限
-        if (!contractAuthorized) {
-          logDecrypt("合约无权限，正在授予...", { handle });
+        const authorized = await acl.persistAllowed(handle, IMAGE_RATING_ADDRESS);
+        logDecrypt("ACL persistAllowed result", { handle, authorized });
+        if (!authorized) {
+          logDecrypt("Calling allow()", { handle });
           const tx = await acl.allow(handle, IMAGE_RATING_ADDRESS);
           await tx.wait();
-          logDecrypt("合约权限授予成功");
-        }
-
-        // 如果用户没有权限，授予用户权限
-        if (!userAuthorized) {
-          logDecrypt("用户无权限，正在授予...", { handle, userAddress });
-          const tx = await acl.allow(handle, userAddress);
-          await tx.wait();
-          logDecrypt("用户权限授予成功");
+          logDecrypt("allow tx confirmed");
         }
       }
-
       logDecrypt("Step 3: generate keypair");
       const keypair = fheInstance.generateKeypair();
-      logDecrypt("Keypair 生成完成, publicKey前50字符:", keypair.publicKey.substring(0, 50) + "...");
-
       const timestamp = Math.floor(Date.now() / 1000).toString();
       logDecrypt("Step 4: create EIP712", { timestamp });
-      logDecrypt("⚠️ 传递给 createEIP712 的参数:", {
-        publicKey: keypair.publicKey.substring(0, 50) + "...",
-        contractAddresses: [IMAGE_RATING_ADDRESS],
-        timestamp,
-        expirationTime: "10"
-      });
-
       const eip712 = fheInstance.createEIP712(
         keypair.publicKey,
         [IMAGE_RATING_ADDRESS],
         timestamp,
         "10"
       );
-
-      logDecrypt("EIP712 创建完成:", {
-        domain: eip712.domain,
-        messageKeys: Object.keys(eip712.message || {}),
-        typesKeys: Object.keys(eip712.types || {})
-      });
-
       logDecrypt("Step 5: sign typed data");
       const signature = await signer.signTypedData(
         eip712.domain,
         { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
         eip712.message
       );
-      logDecrypt("签名完成, signature前50字符:", signature.substring(0, 50) + "...");
-
       const handlePairs = handles.map((handle) => ({
         handle,
         contractAddress: IMAGE_RATING_ADDRESS,
       }));
-
-      logDecrypt("HandlePairs:", handlePairs);
-
       setStatus("Requesting decryption from Relayer...");
       logDecrypt("Step 6: call userDecrypt");
-      logDecrypt("⚠️ 传递给 userDecrypt 的参数:", {
-        handlePairs,
-        privateKey: "***已隐藏***",
-        publicKey: keypair.publicKey.substring(0, 50) + "...",
-        signature: signature.substring(0, 50) + "...",
-        contractAddresses: [IMAGE_RATING_ADDRESS],
-        userAddress,
-        timestamp,
-        expirationTime: "10"
-      });
-
       const result = await fheInstance.userDecrypt(
         handlePairs,
         keypair.privateKey,
@@ -568,29 +475,9 @@ function App() {
         },
       }));
       setStatus("Decryption completed.");
-      logDecrypt("✅ 解密成功!", { clearSum, clearCount, average });
-      logDecrypt("========== 解密流程结束 ==========");
+      logDecrypt("Success", { clearSum, clearCount, average });
     } catch (error) {
-      logDecrypt("❌ 解密失败，错误详情:");
       console.error(error);
-
-      if (error instanceof Error) {
-        logDecrypt("错误消息:", error.message);
-        logDecrypt("错误堆栈:", error.stack);
-
-        // 检查是否是授权错误
-        if (error.message.includes("not authorized")) {
-          logDecrypt("⚠️ 这是一个授权错误！");
-          logDecrypt("可能的原因:");
-          logDecrypt("1. 用户不是图片创建者");
-          logDecrypt("2. 图片还没有评分数据");
-          logDecrypt("3. ACL 权限配置不正确");
-          logDecrypt("4. EIP712 签名参数不正确");
-        }
-      }
-
-      logDecrypt("========== 解密流程失败 ==========");
-
       setStatus(
         error instanceof Error ? error.message : "Decryption failed, please check console for details."
       );
@@ -602,24 +489,10 @@ function App() {
     } finally {
       logDecrypt("End decrypt flow");
       setIsDecrypting(false);
-      setDecryptingImageId(null); // 清除解密状态
     }
   };
 
   const handleQuickRating = async (imageId: string, rating: number) => {
-    // 防止重复点击：检查是否正在为此图片评分
-    if (ratingInProgress === imageId) {
-      console.warn("[Rating] Already rating this image, please wait...");
-      return;
-    }
-
-    // 防止重复点击：检查是否有其他图片正在评分
-    if (isSubmittingRating) {
-      console.warn("[Rating] Another rating is in progress, please wait...");
-      setStatus("另一个评分操作正在进行中，请稍候...");
-      return;
-    }
-
     if (!sdkReady) {
       const ready = await initializeRelayerSdk();
       if (!ready) {
@@ -635,7 +508,6 @@ function App() {
 
     try {
       setIsSubmittingRating(true);
-      setRatingInProgress(imageId); // 标记正在评分的图片
       setStatus("Preparing encrypted rating...");
       console.info("[Rating] Target imageId:", imageId, "Stars:", rating);
       const { encryptedRating, inputProof } = await encryptRatingViaSDK(rating);
@@ -660,7 +532,6 @@ function App() {
       setStatus(message);
     } finally {
       setIsSubmittingRating(false);
-      setRatingInProgress(null); // 清除评分状态
     }
   };
 
@@ -751,53 +622,47 @@ function App() {
             return (
               <div className="gallery-card" key={image.id}>
                 <img src={image.gatewayUrl} alt={`image-${image.id}`} />
-                <div className="gallery-card-content">
-                  <div>
-                    <span className="label">IMAGE ID</span>
-                    <p className="mono" style={{ margin: '0.5rem 0 0', fontSize: '1.1rem', fontWeight: '600' }}>#{image.id}</p>
-                  </div>
-                  <div>
-                    <span className="label" style={{ display: 'block', marginBottom: '0.75rem' }}>RATE THIS IMAGE</span>
-                    <div className="rating-buttons">
-                      {[1, 2, 3, 4, 5].map((value) => (
-                        <button
-                          key={`${image.id}-${value}`}
-                          className="rating-button"
-                          type="button"
-                          disabled={isSubmittingRating}
-                          onClick={() => handleQuickRating(image.id, value)}
-                        >
-                          {value} ⭐
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <button
-                    className="secondary"
-                    type="button"
-                    disabled={isDecrypting}
-                    onClick={() => handleUserDecrypt(image.id, image.sum, image.count)}
-                    style={{ width: '100%' }}
-                  >
-                    {isDecrypting ? "🔐 Decrypting..." : "🔓 Decrypt My Rating"}
-                  </button>
-                  {decrypted && (
-                    <div className="stats">
-                      <div>
-                        <span className="label">TOTAL SCORE</span>
-                        <p style={{ margin: '0.5rem 0 0', fontSize: '1.5rem', fontWeight: '700', color: '#8b5cf6' }}>{decrypted.sum}</p>
-                      </div>
-                      <div>
-                        <span className="label">RATING COUNT</span>
-                        <p style={{ margin: '0.5rem 0 0', fontSize: '1.5rem', fontWeight: '700', color: '#6366f1' }}>{decrypted.count}</p>
-                      </div>
-                      <div>
-                        <span className="label">AVERAGE RATING</span>
-                        <p style={{ margin: '0.5rem 0 0', fontSize: '1.8rem', fontWeight: '700', color: '#fbbf24' }}>{decrypted.average.toFixed(2)} ⭐</p>
-                      </div>
-                    </div>
-                  )}
+                <div>
+                  <span className="label">Image ID</span>
+                  <p className="mono">#{image.id}</p>
                 </div>
+                <div className="rating-buttons">
+                  {[1, 2, 3, 4, 5].map((value) => (
+                    <button
+                      key={`${image.id}-${value}`}
+                      className="rating-button"
+                      type="button"
+                      disabled={isSubmittingRating}
+                      onClick={() => handleQuickRating(image.id, value)}
+                    >
+                      {value} ⭐
+                    </button>
+                  ))}
+                </div>
+                <button
+                  className="secondary"
+                  type="button"
+                  disabled={isDecrypting}
+                  onClick={() => handleUserDecrypt(image.id, image.sum, image.count)}
+                >
+                  {isDecrypting ? "Decrypting..." : "Decrypt My Rating"}
+                </button>
+                {decrypted && (
+                  <div className="stats-card">
+                    <div>
+                      <span className="label">Total Score</span>
+                      <p>{decrypted.sum}</p>
+                    </div>
+                    <div>
+                      <span className="label">Count</span>
+                      <p>{decrypted.count}</p>
+                    </div>
+                    <div>
+                      <span className="label">Average</span>
+                      <p>{decrypted.average.toFixed(2)}</p>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}

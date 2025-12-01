@@ -1,34 +1,27 @@
-import { createConfig, http } from 'wagmi';
+import { getDefaultConfig } from '@rainbow-me/rainbowkit';
 import { sepolia } from 'wagmi/chains';
-import { metaMaskWallet, okxWallet } from '@rainbow-me/rainbowkit/wallets';
-import { connectorsForWallets } from '@rainbow-me/rainbowkit';
+import { http } from 'viem';
 
-// Only configure injected wallets: MetaMask and OKX
-// WalletConnect is not used, so projectId is not needed
-const connectors = connectorsForWallets(
-  [
-    {
-      groupName: 'Injected Wallets',
-      wallets: [
-        metaMaskWallet,  // MetaMask wallet
-        okxWallet,       // OKX wallet
-      ],
+// 自定义 Sepolia 链配置，使用 Infura RPC
+const sepoliaWithCustomRpc = {
+  ...sepolia,
+  rpcUrls: {
+    default: {
+      http: [import.meta.env.VITE_RELAYER_RPC_URL || 'https://sepolia.infura.io/v3/3ec7c6d21e764c4d9470e4be10f73658'],
     },
-  ],
-  {
-    appName: 'Image Rating dApp',
-    projectId: '', // Empty string since WalletConnect is not used
-  }
-);
-
-// Use Infura RPC endpoint
-const sepoliaRpcUrl = 'https://sepolia.infura.io/v3/c37e15de76944bc693d9226252fe002c';
-
-export const config = createConfig({
-  chains: [sepolia],
-  connectors,
-  transports: {
-    [sepolia.id]: http(sepoliaRpcUrl),
+    public: {
+      http: [import.meta.env.VITE_RELAYER_RPC_URL || 'https://sepolia.infura.io/v3/3ec7c6d21e764c4d9470e4be10f73658'],
+    },
   },
+};
+
+export const config = getDefaultConfig({
+  appName: 'Image Rating dApp',
+  projectId: import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || 'YOUR_PROJECT_ID',
+  chains: [sepoliaWithCustomRpc],
+  transports: {
+    [sepolia.id]: http(import.meta.env.VITE_RELAYER_RPC_URL || 'https://sepolia.infura.io/v3/3ec7c6d21e764c4d9470e4be10f73658'),
+  },
+  ssr: false,
 });
 

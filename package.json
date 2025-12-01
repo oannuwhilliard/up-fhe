@@ -17,7 +17,8 @@
   "dependencies": {
     "encrypted-types": "^0.0.4",
     "@fhevm/solidity": "^0.9.1",
-    "@zama-fhe/oracle-solidity": "^0.1.0"
+    "@zama-fhe/oracle-solidity": "^0.1.0",
+    "@zama-fhe/relayer-sdk": "0.3.0-5"
   },
   "devDependencies": {
     "@fhevm/hardhat-plugin": "^0.3.0-1",

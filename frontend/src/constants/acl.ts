@@ -1,3 +1,6 @@
+// Sepolia 测试网 ACL 合约地址
+export const ACL_ADDRESS = "0xf0Ffdc93b7E186bC2f8CB3dAA75D86d1930A433D";
+
 export const ACL_ABI = [
   {
     "inputs": [
@@ -84,5 +87,7 @@ export const ACL_ABI = [
     "type": "function"
   }
 ] as const;
+
+
 
 

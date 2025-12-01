@@ -1,4 +1,9 @@
+// Sepolia 测试网合约地址
 export const IMAGE_RATING_ADDRESS = "0x4447501cc7e490B370bf91E2F4FD1874BdFCd841";
+
+// Debug: Log contract address
+console.log('[Contract] Network: Sepolia');
+console.log('[Contract] Contract Address:', IMAGE_RATING_ADDRESS);
 
 export const IMAGE_RATING_ABI = [
   {
@@ -232,5 +237,7 @@ export const IMAGE_RATING_ABI = [
     "type": "function"
   }
 ] as const;
+
+
 
 
