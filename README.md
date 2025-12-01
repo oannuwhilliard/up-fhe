@@ -1,7 +1,7 @@
 # Image Rating dApp with FHEVM
 
 去中心化图片打分系统，使用 Zama FHEVM 实现加密评分。
-
+youtube-video：https://www.youtube.com/watch?v=Rvqi5jBTNjg
 ## 功能特性
 
 - ✅ **上传图片**：任何人都可以上传图片（IPFS CID 存储在链上）
